@@ -76,8 +76,14 @@ semantic-release:
         }
       ')"
       export GITLAB_URL="${SEMANTIC_RELEASE_GITLAB_URL:-${releaserc_gitlab_url:-http://${INTERNAL_GITLAB_HOST}}}"
-      if [ "${GITLAB_URL#https://}" != "${GITLAB_URL}" ]; then
-        gitlab_host_port="${GITLAB_URL#https://}"
+      # Fetch self-signed cert from whichever HTTPS endpoint is reachable:
+      # GITLAB_URL takes priority, fall back to CI_SERVER_URL (set by GitLab to the external URL).
+      _tls_url="${GITLAB_URL}"
+      if [ "${_tls_url#https://}" = "${_tls_url}" ] && [ "${CI_SERVER_URL#https://}" != "${CI_SERVER_URL:-}" ]; then
+        _tls_url="${CI_SERVER_URL}"
+      fi
+      if [ "${_tls_url#https://}" != "${_tls_url}" ]; then
+        gitlab_host_port="${_tls_url#https://}"
         gitlab_host_port="${gitlab_host_port%%/*}"
         gitlab_host="${gitlab_host_port%%:*}"
         gitlab_port="${gitlab_host_port##*:}"
@@ -89,6 +95,8 @@ semantic-release:
           -connect "$gitlab_host:$gitlab_port" 2>/dev/null \
           | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' > /tmp/gitlab-ca.crt
         if [ -s /tmp/gitlab-ca.crt ]; then
+          cp /tmp/gitlab-ca.crt /usr/local/share/ca-certificates/gitlab-self-signed.crt
+          update-ca-certificates --fresh > /dev/null 2>&1 || true
           export NODE_EXTRA_CA_CERTS=/tmp/gitlab-ca.crt
           git config --global http.sslCAInfo /tmp/gitlab-ca.crt
         fi
